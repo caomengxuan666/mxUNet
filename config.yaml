@@ -1,0 +1,18 @@
+data:
+  image_dir: 'D:/medicalDetect/ISIC2018_Task1_TraininSsg_'
+  mask_dir: 'D:/medicalDetect/ISIC2018_Task1_Training_GT'
+  batch_size: 16
+  image_size: [256, 256]
+
+model:
+  n_channels: 3
+  n_classes: 1
+
+training:
+  epochs: 40
+  learning_rate: 0.00001
+  weight_decay: 1e-8
+  momentum: 0.9
+  save_path: 'best_model.pth'
+  log_dir: 'runs/exp'
+  save_interval: 5
