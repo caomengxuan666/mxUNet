@@ -134,7 +134,7 @@ def main(config_path='config.yaml'):
 
     train_loader = prepare_dataloader(config)
 
-    save_interval = config['training']['save_interval']  # Load save interval from config
+    save_interval = config['training']['save_interval']  # 加载预训练模型
 
     pretrain_path = config['training'].get('pretrain_path', None)  # 读取预训练模型路径（如果有）
 

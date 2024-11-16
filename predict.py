@@ -11,7 +11,7 @@ if __name__ == "__main__":
 
     net = UNet(n_channels=3, n_classes=1)
     net.to(device=device)
-    net.load_state_dict(torch.load('best_model.pth', map_location=device))
+    net.load_state_dict(torch.load('outputModels/best_model.pth', map_location=device))
     net.eval()
 
     current_dir = os.getcwd()
