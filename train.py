@@ -12,14 +12,19 @@ from PIL import Image
 
 
 class CustomDataset(Dataset):
-    def __init__(self, image_dir, mask_dir, transform=None,config_path="config.yaml"):
+    def __init__(self, image_dir, mask_dir, transform=None, config_path="config.yaml"):
         self.image_dir = image_dir
         self.mask_dir = mask_dir
         self.transform = transform
-        self.images = [f for f in os.listdir(image_dir) if f.endswith('.png')]
+
+        #读取配置
         self.config = load_config(config_path)
+        self.image_ext = self.config['data']['image_ext']
+        self.mask_ext = self.config['data']['mask_ext']
         self.channels = self.config['model']['channels']
-        print("当前训练的 图像通道数:  ", self.channels)
+        self.images = [f for f in os.listdir(image_dir) if f.endswith(self.image_ext)]
+
+        print("当前训练的图像通道数: ", self.channels)
 
     def __len__(self):
         return len(self.images)
@@ -27,9 +32,7 @@ class CustomDataset(Dataset):
     def __getitem__(self, idx):
         img_name = self.images[idx]
         img_path = os.path.join(self.image_dir, img_name)
-        mask_name = img_name.replace('.jpg', '_segmentation.png')
-        #mask_name = img_name.replace('.jpg', '.png')
-
+        mask_name = img_name.replace(self.image_ext, self.mask_ext)
         mask_path = os.path.join(self.mask_dir, mask_name)
 
         if not os.path.exists(img_path):
@@ -69,7 +72,75 @@ class DiceLoss(nn.Module):
         return 1 - dice
 
 
-def train_net(net, device, train_loader, epochs, batch_size, lr, weight_decay, momentum, save_path, log_dir, save_interval, pretrain_path=None):
+def compute_metrics(pred, label):
+    """
+    计算多个指标: Dice, IoU, Precision, Recall, F1 Score, Specificity, Pixel Accuracy
+    """
+    pred = torch.sigmoid(pred) > 0.5  # 二值化
+    pred = pred.view(-1).float()
+    label = label.view(-1).float()
+
+    intersection = (pred * label).sum()
+    union = pred.sum() + label.sum() - intersection
+    TP = intersection  # True Positives
+    FP = pred.sum() - intersection  # False Positives
+    FN = label.sum() - intersection  # False Negatives
+    TN = (1 - pred).sum() - FN  # True Negatives
+
+    dice = (2. * TP) / (2. * TP + FP + FN + 1e-7)
+    iou = TP / (union + 1e-7)
+    precision = TP / (TP + FP + 1e-7)
+    recall = TP / (TP + FN + 1e-7)
+    f1 = 2 * precision * recall / (precision + recall + 1e-7)
+    specificity = TN / (TN + FP + 1e-7)
+    pixel_accuracy = (TP + TN) / (TP + FP + TN + FN + 1e-7)
+
+    return {
+        "Dice": dice.item(),
+        "IoU": iou.item(),
+        "Precision": precision.item(),
+        "Recall": recall.item(),
+        "F1": f1.item(),
+        "Specificity": specificity.item(),
+        "Pixel Accuracy": pixel_accuracy.item(),
+    }
+
+
+def validate_net(net, val_loader, criterion, device, writer, epoch):
+    """
+    验证阶段：计算损失和多种指标
+    """
+    net.eval()
+    val_loss = 0
+    metrics = {"Dice": 0, "IoU": 0, "Precision": 0, "Recall": 0, "F1": 0, "Specificity": 0, "Pixel Accuracy": 0}
+    with torch.no_grad():
+        for image, label in val_loader:
+            image = image.to(device=device, dtype=torch.float32)
+            label = label.to(device=device, dtype=torch.float32)
+            pred = net(image)
+            loss = criterion(pred, label)
+            val_loss += loss.item()
+
+            batch_metrics = compute_metrics(pred, label)
+            for key in metrics:
+                metrics[key] += batch_metrics[key]
+
+    avg_val_loss = val_loss / len(val_loader)
+    for key in metrics:
+        metrics[key] /= len(val_loader)
+
+    print(f"Validation Loss: {avg_val_loss}")
+    for key, value in metrics.items():
+        print(f"{key}: {value:.4f}")
+
+    writer.add_scalar('Loss/val', avg_val_loss, epoch)
+    for key, value in metrics.items():
+        writer.add_scalar(f'Metrics/{key}', value, epoch)
+
+    return avg_val_loss
+
+
+def train_net(net, device, train_loader, val_loader, epochs, batch_size, lr, weight_decay, momentum, save_path, log_dir, save_interval, validate_interval, pretrain_path=None):
     optimizer = optim.RMSprop(net.parameters(), lr=lr, weight_decay=weight_decay, momentum=momentum)
     criterion = DiceLoss()
     best_loss = float('inf')
@@ -106,15 +177,21 @@ def train_net(net, device, train_loader, epochs, batch_size, lr, weight_decay, m
         writer.add_scalar('Loss/train', avg_epoch_loss, epoch)
         print(f'Epoch {epoch + 1}/{epochs} - Loss: {avg_epoch_loss}')
 
-        # 每隔 save_interval 保存一次模型，并添加数字
+        # 根据 validate_interval 控制验证的频率
+        if (epoch + 1) % validate_interval == 0:
+            avg_val_loss = validate_net(net, val_loader, criterion, device, writer, epoch)
+
+            # 保存性能最好的模型
+            if avg_val_loss < best_loss:
+                best_loss = avg_val_loss
+                torch.save(net.state_dict(), save_path)
+                print(f"性能最好的模型已更新并保存: {save_path}")
+
+        # 每隔 save_interval 保存一次模型
         if (epoch + 1) % save_interval == 0:
             save_model_path = f"{save_path}_epoch{epoch + 1}.pth"
             torch.save(net.state_dict(), save_model_path)
             print(f"模型已保存: {save_model_path}")
-
-        if avg_epoch_loss < best_loss:
-            best_loss = avg_epoch_loss
-            torch.save(net.state_dict(), save_path)
 
     writer.close()
 
@@ -124,16 +201,23 @@ def load_config(config_path):
         return yaml.safe_load(file)
 
 
-def prepare_dataloader(config):
-    image_dir = config['data']['image_dir']
-    mask_dir = config['data']['mask_dir']
+def prepare_dataloader(config, is_train=True):
+    if is_train:
+        image_dir = config['data']['image_dir']
+        mask_dir = config['data']['mask_dir']
+    else:
+        image_dir = config['data']['val_image_dir']
+        mask_dir = config['data']['val_mask_dir']
+
     image_size = config['data']['image_size']
     batch_size = config['data']['batch_size']
+    image_ext = config['data']['image_ext']
+    mask_ext = config['data']['mask_ext']
 
     transform = transforms.Compose([transforms.Resize(image_size), transforms.ToTensor()])
 
     dataset = CustomDataset(image_dir=image_dir, mask_dir=mask_dir, transform=transform)
-    return DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    return DataLoader(dataset, batch_size=batch_size, shuffle=is_train)
 
 
 def main(config_path='config.yaml'):
@@ -143,10 +227,11 @@ def main(config_path='config.yaml'):
     net = UNet(n_channels=config['model']['channels'], n_classes=config['model']['n_classes'])
     net.to(device=device)
 
-    train_loader = prepare_dataloader(config)
+    train_loader = prepare_dataloader(config, is_train=True)
+    val_loader = prepare_dataloader(config, is_train=False)
 
     save_interval = config['training']['save_interval']
-
+    validate_interval = config['training']['validate_interval']
     pretrain_path = config['training'].get('pretrain_path', None)
 
     # 调试信息
@@ -156,17 +241,18 @@ def main(config_path='config.yaml'):
         net=net,
         device=device,
         train_loader=train_loader,
+        val_loader=val_loader,
         epochs=config['training']['epochs'],
         batch_size=config['data']['batch_size'],
-        lr=float(config['training']['learning_rate']),  # 确保转换为浮点数
-        weight_decay=float(config['training']['weight_decay']),  # 确保转换为浮点数
-        momentum=float(config['training']['momentum']),  # 确保转换为浮点数
+        lr=float(config['training']['learning_rate']),
+        weight_decay=float(config['training']['weight_decay']),
+        momentum=float(config['training']['momentum']),
         save_path=config['training']['save_path'],
         log_dir=config['training']['log_dir'],
         save_interval=save_interval,
+        validate_interval=validate_interval,
         pretrain_path=pretrain_path
     )
-
 
 
 if __name__ == "__main__":

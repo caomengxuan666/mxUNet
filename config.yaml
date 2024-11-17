@@ -25,7 +25,7 @@ model:
 
 training:
   # 训练轮次
-  epochs: 200
+  epochs: 500
   # 学习率
   learning_rate: 0.00001
   # 权重衰减
@@ -37,6 +37,8 @@ training:
   # 日志保存路径
   log_dir: 'runs/exp'
   # 模型保存间隔
-  save_interval: 10
+  save_interval: 20
+  # 每多少轮验证一次
+  validate_interval: 20
   # 预训练模型
   pretrain_path: None
