@@ -1,22 +1,31 @@
 data:
   #训练集路径
-  image_dir: 'D:/medicalDetect/ISIC2018_Task1_TraininSsg_'
+  image_dir: '/home/chxy/mxUNet/dataset/train/images'
   #掩膜标签路径
-  mask_dir: 'D:/medicalDetect/ISIC2018_Task1_Training_GT'
+  mask_dir: '/home/chxy/mxUNet/dataset/train/binary'
+  #验证集路径
+  val_image_dir: '/home/chxy/mxUNet/dataset/val/images'
+  #验证集标签路径
+  val_mask_dir: '/home/chxy/mxUNet/dataset/val/binary'
+
   #训练批次大小
-  batch_size: 16
+  batch_size: 32
   #图像尺寸
   image_size: [256, 256]
+  #数据集的图片格式
+  image_ext: '.png'
+  #数据集的掩膜格式
+  mask_ext: '.png'
 
 model:
   # 输入通道数
-  n_channels: 3
-  # 固定的
+  channels: 3
+  # N-1分类
   n_classes: 1
 
 training:
   # 训练轮次
-  epochs: 40
+  epochs: 200
   # 学习率
   learning_rate: 0.00001
   # 权重衰减
@@ -28,6 +37,6 @@ training:
   # 日志保存路径
   log_dir: 'runs/exp'
   # 模型保存间隔
-  save_interval: 5
+  save_interval: 10
   # 预训练模型
-  pretrain_path: 'outputModels/best_model.pth'
+  pretrain_path: None

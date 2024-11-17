@@ -39,7 +39,7 @@ class MainWindow(QTabWidget):
     def load_model(self):
         net = UNet(n_channels=3, n_classes=1)
         net.to(device=device)
-        net.load_state_dict(torch.load('outputModels/best_model.pth', map_location=device))
+        net.load_state_dict(torch.load('best_model.pth_epoch200.pth', map_location=device))
         net.eval()
         return net
 

@@ -12,11 +12,14 @@ from PIL import Image
 
 
 class CustomDataset(Dataset):
-    def __init__(self, image_dir, mask_dir, transform=None):
+    def __init__(self, image_dir, mask_dir, transform=None,config_path="config.yaml"):
         self.image_dir = image_dir
         self.mask_dir = mask_dir
         self.transform = transform
-        self.images = [f for f in os.listdir(image_dir) if f.endswith('.jpg')]
+        self.images = [f for f in os.listdir(image_dir) if f.endswith('.png')]
+        self.config = load_config(config_path)
+        self.channels = self.config['model']['channels']
+        print("当前训练的 图像通道数:  ", self.channels)
 
     def __len__(self):
         return len(self.images)
@@ -25,6 +28,8 @@ class CustomDataset(Dataset):
         img_name = self.images[idx]
         img_path = os.path.join(self.image_dir, img_name)
         mask_name = img_name.replace('.jpg', '_segmentation.png')
+        #mask_name = img_name.replace('.jpg', '.png')
+
         mask_path = os.path.join(self.mask_dir, mask_name)
 
         if not os.path.exists(img_path):
@@ -32,8 +37,14 @@ class CustomDataset(Dataset):
         if not os.path.exists(mask_path):
             raise FileNotFoundError(f"Mask file not found: {mask_path}")
 
-        image = Image.open(img_path).convert("RGB")
+        image = Image.open(img_path)
         mask = Image.open(mask_path).convert("L")
+
+        # 根据配置文件中的 channels 参数决定是否将图像转换为灰度图
+        if self.channels == 1:
+            image = image.convert("L")
+        else:
+            image = image.convert("RGB")
 
         if self.transform:
             image = self.transform(image)
@@ -134,9 +145,12 @@ def main(config_path='config.yaml'):
 
     train_loader = prepare_dataloader(config)
 
-    save_interval = config['training']['save_interval']  # 加载预训练模型
+    save_interval = config['training']['save_interval']
 
-    pretrain_path = config['training'].get('pretrain_path', None)  # 读取预训练模型路径（如果有）
+    pretrain_path = config['training'].get('pretrain_path', None)
+
+    # 调试信息
+    print(f"Training parameters: {config['training']}")
 
     train_net(
         net=net,
@@ -144,14 +158,15 @@ def main(config_path='config.yaml'):
         train_loader=train_loader,
         epochs=config['training']['epochs'],
         batch_size=config['data']['batch_size'],
-        lr=config['training']['learning_rate'],
-        weight_decay=config['training']['weight_decay'],
-        momentum=config['training']['momentum'],
+        lr=float(config['training']['learning_rate']),  # 确保转换为浮点数
+        weight_decay=float(config['training']['weight_decay']),  # 确保转换为浮点数
+        momentum=float(config['training']['momentum']),  # 确保转换为浮点数
         save_path=config['training']['save_path'],
         log_dir=config['training']['log_dir'],
         save_interval=save_interval,
-        pretrain_path=pretrain_path  # 传递预训练模型路径
+        pretrain_path=pretrain_path
     )
+
 
 
 if __name__ == "__main__":
