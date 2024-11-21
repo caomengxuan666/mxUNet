@@ -9,7 +9,7 @@ data:
   val_mask_dir: '/home/chxy/mxUNet/dataset/val/binary'
 
   # 训练批次大小
-  batch_size: 128
+  batch_size: 256
   # 图像尺寸
   image_size: [256, 256]
   # 数据集的图片格式
@@ -25,9 +25,9 @@ model:
 
 training:
   # 训练轮次
-  epochs: 500
+  epochs: 1000
   # 学习率
-  learning_rate: 5e-6
+  learning_rate: 1e-4
   # 权重衰减
   weight_decay: 1e-8
   # 动量
@@ -43,4 +43,4 @@ training:
   # 每多少轮验证一次
   validate_interval: 20
   # 预训练模型
-  pretrain_path: 'outputModels/new_model_epoch_500.pth'
+  pretrain_path: 'None'
