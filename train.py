@@ -74,7 +74,7 @@ class DiceLoss(nn.Module):
 
 def compute_metrics(pred, label):
     """
-    计算多个指标: Dice, IoU, Precision, Recall, F1 Score, Specificity, Pixel Accuracy
+    计算多个指标: Dice, IoU, Precision, Recall, F1 Score, Specificity, Pixel Accuracy, MAE
     """
     pred = torch.sigmoid(pred) > 0.5  # 二值化
     pred = pred.view(-1).float()
@@ -87,17 +87,20 @@ def compute_metrics(pred, label):
     FN = label.sum() - intersection  # False Negatives
     TN = (1 - pred).sum() - FN  # True Negatives
 
-    dice = (2. * TP) / (2. * TP + FP + FN + 1e-7)
-    iou = TP / (union + 1e-7)
-    precision = TP / (TP + FP + 1e-7)
-    recall = TP / (TP + FN + 1e-7)
-    f1 = 2 * precision * recall / (precision + recall + 1e-7)
-    specificity = TN / (TN + FP + 1e-7)
-    pixel_accuracy = (TP + TN) / (TP + FP + TN + FN + 1e-7)
+    # 计算指标
+    dice = (2. * TP) / (2. * TP + FP + FN + 1e-7)  # Dice Coefficient
+    iou = TP / (union + 1e-7)  # Intersection over Union
+    mae = torch.abs(pred - label).mean()  # Mean Absolute Error
+    precision = TP / (TP + FP + 1e-7)  # Precision
+    recall = TP / (TP + FN + 1e-7)  # Recall
+    f1 = 2 * precision * recall / (precision + recall + 1e-7)  # F1 Score
+    specificity = TN / (TN + FP + 1e-7)  # Specificity
+    pixel_accuracy = (TP + TN) / (TP + FP + TN + FN + 1e-7)  # Pixel Accuracy
 
     return {
         "Dice": dice.item(),
         "IoU": iou.item(),
+        "MAE": mae.item(),
         "Precision": precision.item(),
         "Recall": recall.item(),
         "F1": f1.item(),
@@ -112,7 +115,7 @@ def validate_net(net, val_loader, criterion, device, writer, epoch):
     """
     net.eval()
     val_loss = 0
-    metrics = {"Dice": 0, "IoU": 0, "Precision": 0, "Recall": 0, "F1": 0, "Specificity": 0, "Pixel Accuracy": 0}
+    metrics = {"Dice": 0, "IoU": 0, "MAE": 0, "Precision": 0, "Recall": 0, "F1": 0, "Specificity": 0, "Pixel Accuracy": 0}
     with torch.no_grad():
         for image, label in val_loader:
             image = image.to(device=device, dtype=torch.float32)
@@ -121,6 +124,7 @@ def validate_net(net, val_loader, criterion, device, writer, epoch):
             loss = criterion(pred, label)
             val_loss += loss.item()
 
+            # 计算批次指标
             batch_metrics = compute_metrics(pred, label)
             for key in metrics:
                 metrics[key] += batch_metrics[key]
@@ -140,18 +144,13 @@ def validate_net(net, val_loader, criterion, device, writer, epoch):
     return avg_val_loss
 
 
-def train_net(net, device, train_loader, val_loader, epochs, batch_size, lr, weight_decay, momentum, save_path, log_dir, save_interval, validate_interval, pretrain_path=None):
+def train_net(net, device, train_loader, val_loader, epochs, batch_size, lr, weight_decay, momentum, save_path, save_name, log_dir, save_interval, validate_interval, pretrain_path=None):
     optimizer = optim.RMSprop(net.parameters(), lr=lr, weight_decay=weight_decay, momentum=momentum)
     criterion = DiceLoss()
     best_loss = float('inf')
 
-    # 如果有预训练模型路径，加载预训练模型权重
-    if pretrain_path:
-        if os.path.exists(pretrain_path):
-            net.load_state_dict(torch.load(pretrain_path))
-            print(f"加载预训练模型：{pretrain_path}")
-        else:
-            print(f"警告：预训练模型 {pretrain_path} 未找到，开始从头训练。")
+    # 确保保存路径目录存在
+    os.makedirs(save_path, exist_ok=True)
 
     writer = SummaryWriter(log_dir)
 
@@ -177,21 +176,22 @@ def train_net(net, device, train_loader, val_loader, epochs, batch_size, lr, wei
         writer.add_scalar('Loss/train', avg_epoch_loss, epoch)
         print(f'Epoch {epoch + 1}/{epochs} - Loss: {avg_epoch_loss}')
 
-        # 根据 validate_interval 控制验证的频率
+        # 验证阶段
         if (epoch + 1) % validate_interval == 0:
             avg_val_loss = validate_net(net, val_loader, criterion, device, writer, epoch)
 
             # 保存性能最好的模型
             if avg_val_loss < best_loss:
                 best_loss = avg_val_loss
-                torch.save(net.state_dict(), save_path)
-                print(f"性能最好的模型已更新并保存: {save_path}")
+                best_model_path = os.path.join(save_path, f'{save_name}_best.pth')
+                torch.save(net.state_dict(), best_model_path)
+                print(f"性能最好的模型已保存到: {best_model_path}")
 
         # 每隔 save_interval 保存一次模型
         if (epoch + 1) % save_interval == 0:
-            save_model_path = f"{save_path}_epoch{epoch + 1}.pth"
-            torch.save(net.state_dict(), save_model_path)
-            print(f"模型已保存: {save_model_path}")
+            checkpoint_path = os.path.join(save_path, f'{save_name}_epoch_{epoch + 1}.pth')
+            torch.save(net.state_dict(), checkpoint_path)
+            print(f"模型检查点已保存到: {checkpoint_path}")
 
     writer.close()
 
@@ -247,7 +247,8 @@ def main(config_path='config.yaml'):
         lr=float(config['training']['learning_rate']),
         weight_decay=float(config['training']['weight_decay']),
         momentum=float(config['training']['momentum']),
-        save_path=config['training']['save_path'],
+        save_path=config['training']['save_path'],  # 保存路径
+        save_name=config['training']['save_name'],  # 保存名称
         log_dir=config['training']['log_dir'],
         save_interval=save_interval,
         validate_interval=validate_interval,

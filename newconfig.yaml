@@ -1,0 +1,46 @@
+data:
+  # 训练集路径
+  image_dir: '/home/chxy/mxUNet/dataset/train/images_excluding_loss'
+  # 掩膜标签路径
+  mask_dir: '/home/chxy/mxUNet/dataset/train/four_binary'
+  # 验证集路径
+  val_image_dir: '/home/chxy/mxUNet/dataset/val/images'
+  # 验证集标签路径
+  val_mask_dir: '/home/chxy/mxUNet/dataset/val/binary'
+
+  # 训练批次大小
+  batch_size: 128
+  # 图像尺寸
+  image_size: [256, 256]
+  # 数据集的图片格式
+  image_ext: '.png'
+  # 数据集的掩膜格式
+  mask_ext: '.png'
+
+model:
+  # 输入通道数
+  channels: 3
+  # N-1分类
+  n_classes: 1
+
+training:
+  # 训练轮次
+  epochs: 500
+  # 学习率
+  learning_rate: 5e-6
+  # 权重衰减
+  weight_decay: 1e-8
+  # 动量
+  momentum: 0.9
+  # 保存模型路径
+  save_path: 'outputModels'
+  # 保存模型名称（动态加入轮次）
+  save_name: 'pretrained_new_model'
+  # 日志保存路径
+  log_dir: 'runs/exp'
+  # 模型保存间隔
+  save_interval: 100
+  # 每多少轮验证一次
+  validate_interval: 20
+  # 预训练模型
+  pretrain_path: 'outputModels/new_model_epoch_500.pth'

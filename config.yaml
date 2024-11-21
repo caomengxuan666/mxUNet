@@ -1,20 +1,20 @@
 data:
-  #训练集路径
+  # 训练集路径
   image_dir: '/home/chxy/mxUNet/dataset/train/images'
-  #掩膜标签路径
+  # 掩膜标签路径
   mask_dir: '/home/chxy/mxUNet/dataset/train/binary'
-  #验证集路径
+  # 验证集路径
   val_image_dir: '/home/chxy/mxUNet/dataset/val/images'
-  #验证集标签路径
+  # 验证集标签路径
   val_mask_dir: '/home/chxy/mxUNet/dataset/val/binary'
 
-  #训练批次大小
-  batch_size: 32
-  #图像尺寸
+  # 训练批次大小
+  batch_size: 64
+  # 图像尺寸
   image_size: [256, 256]
-  #数据集的图片格式
+  # 数据集的图片格式
   image_ext: '.png'
-  #数据集的掩膜格式
+  # 数据集的掩膜格式
   mask_ext: '.png'
 
 model:
@@ -33,7 +33,9 @@ training:
   # 动量
   momentum: 0.9
   # 保存模型路径
-  save_path: 'best_model.pth'
+  save_path: 'outputModels'
+  # 保存模型名称（动态加入轮次）
+  save_name: 'old_model'
   # 日志保存路径
   log_dir: 'runs/exp'
   # 模型保存间隔
