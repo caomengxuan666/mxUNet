@@ -4,9 +4,9 @@ data:
   # 掩膜标签路径
   mask_dir: '/home/chxy/mxUNet/dataset/train/four_binary'
   # 验证集路径
-  val_image_dir: '/home/chxy/mxUNet/dataset/val/images'
+  val_image_dir: '/home/chxy/mxUNet/dataset/cardiacUDC_TE/images'
   # 验证集标签路径
-  val_mask_dir: '/home/chxy/mxUNet/dataset/val/binary'
+  val_mask_dir: '/home/chxy/mxUNet/dataset/cardiacUDC_TE/labels'
 
   # 训练批次大小
   batch_size: 64
@@ -35,7 +35,7 @@ training:
   # 保存模型路径
   save_path: 'outputModels'
   # 保存模型名称（动态加入轮次）
-  save_name: 'pretrained_new_model'
+  save_name: 'b4_model'
   # 日志保存路径
   log_dir: 'runs/exp'
   # 模型保存间隔

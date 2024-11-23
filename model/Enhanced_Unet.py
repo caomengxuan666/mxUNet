@@ -5,7 +5,7 @@ from efficientnet_pytorch import EfficientNet
 
 
 class PyramidPooling(nn.Module):
-    def __init__(self, in_channels, pool_sizes):
+    def __init__(self, in_channels, pool_sizes, dropout_prob=0.5):
         super(PyramidPooling, self).__init__()
         reduced_channels = in_channels // 4
         self.stages = nn.ModuleList([
@@ -13,14 +13,16 @@ class PyramidPooling(nn.Module):
                 nn.AdaptiveAvgPool2d(output_size),
                 nn.Conv2d(in_channels, reduced_channels, kernel_size=1, bias=False),
                 nn.BatchNorm2d(reduced_channels),
-                nn.ReLU(inplace=True)
+                nn.ReLU(inplace=True),
+                nn.Dropout(p=dropout_prob)  # Dropout added to each pooling stage
             )
             for output_size in pool_sizes
         ])
         self.conv = nn.Sequential(
             nn.Conv2d(in_channels + len(pool_sizes) * reduced_channels, in_channels, kernel_size=1),
             nn.BatchNorm2d(in_channels),
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=dropout_prob)  # Dropout added to the final conv
         )
 
     def forward(self, x):
@@ -65,15 +67,19 @@ class SpatialAttention(nn.Module):
 
 
 class MultiScaleAttention(nn.Module):
-    def __init__(self, in_channels, reduction=16):
+    def __init__(self, in_channels, reduction=16, dropout_prob=0.5):
         super(MultiScaleAttention, self).__init__()
         self.channel_att = ChannelAttention(in_channels, reduction)
         self.spatial_att = SpatialAttention()
+        self.dropout = nn.Dropout(p=dropout_prob)
 
     def forward(self, x):
         x = self.channel_att(x)
+        x = self.dropout(x)  # Dropout after channel attention
         x = self.spatial_att(x)
+        x = self.dropout(x)  # Dropout after spatial attention
         return x
+
 
 
 class Up(nn.Module):
@@ -92,7 +98,7 @@ class Up(nn.Module):
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True)
         )
-        self.dropout = nn.Dropout(p=0.1)
+        self.dropout = nn.Dropout(p=0.5)
 
     def forward(self, x1, x2):
         x1 = self.up(x1)
@@ -115,7 +121,7 @@ class OutConv(nn.Module):
 
 
 class ResidualBlock(nn.Module):
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels, out_channels, dropout_prob=0.5):
         super(ResidualBlock, self).__init__()
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(out_channels)
@@ -123,6 +129,7 @@ class ResidualBlock(nn.Module):
         self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1)
         self.bn2 = nn.BatchNorm2d(out_channels)
         self.shortcut = nn.Sequential()
+        self.dropout = nn.Dropout(p=dropout_prob)
         if in_channels != out_channels:
             self.shortcut = nn.Sequential(
                 nn.Conv2d(in_channels, out_channels, kernel_size=1, bias=False),
@@ -134,10 +141,12 @@ class ResidualBlock(nn.Module):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
+        x = self.dropout(x)  # Dropout after the first block
         x = self.conv2(x)
         x = self.bn2(x)
         x += self.shortcut(residual)
         x = self.relu(x)
+        x = self.dropout(x)  # Dropout after adding the shortcut
         return x
 
 

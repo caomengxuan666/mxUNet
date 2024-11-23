@@ -262,9 +262,14 @@ def validate_net(net, val_loader, criterion, device, writer, epoch, config, save
 
     # 可视化样本预测结果
     if save_samples and save_path:
+        # 获取 save_path 的上一级目录
+        parent_dir = os.path.dirname(save_path)
+        # 构建目标路径
+        target_dir = os.path.join(parent_dir, 'res')
+        os.makedirs(target_dir, exist_ok=True)  # 确保目标目录存在
         for i in range(len(sample_images)):
             fig, axs = plt.subplots(1, 3, figsize=(12, 4))
-            # 转换为适合显示的格式
+            # 转换为适合显示的格式 
             if config['model']['channels'] == 1:
                 axs[0].imshow(sample_images[i].squeeze(), cmap='gray')
             else:
@@ -281,7 +286,7 @@ def validate_net(net, val_loader, criterion, device, writer, epoch, config, save
             axs[2].set_title('Prediction')
             axs[2].axis('off')
             plt.tight_layout()
-            plt.savefig(os.path.join(save_path, f'validation_sample_epoch_{epoch + 1}_{i+1}.png'))
+            plt.savefig(os.path.join(target_dir, f'validation_sample_epoch_{epoch + 1}_{i+1}.png'))
             plt.close()
 
     # 计算平均损失和指标
