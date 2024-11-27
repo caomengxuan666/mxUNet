@@ -1,6 +1,8 @@
 import yaml
 from torch.utils.tensorboard import SummaryWriter
-from model.Enhanced_Unet import EnhancedUNet,VGGNET
+from model.Enhanced_Unet import EnhancedUNet
+#from model.V2NET import EnhancedUNet
+
 from torch import optim
 import torch.nn as nn
 import torch
