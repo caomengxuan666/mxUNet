@@ -9,7 +9,7 @@ data:
   val_mask_dir: '/home/chxy/mxUNet/dataset/cardiacUDC_TE/labels'
 
   # 训练批次大小
-  batch_size: 64
+  batch_size: 128
   # 图像尺寸
   image_size: [256, 256]
   # 数据集的图片格式
@@ -27,7 +27,7 @@ training:
   # 训练轮次
   epochs: 1000
   # 学习率
-  learning_rate: 5e-5
+  learning_rate: 1e-4
   # 权重衰减
   weight_decay: 1e-8
   # 动量
@@ -35,7 +35,7 @@ training:
   # 保存模型路径
   save_path: 'outputModels'
   # 保存模型名称（动态加入轮次）
-  save_name: 'b4_model'
+  save_name: 'b4_modelC_a'
   # 日志保存路径
   log_dir: 'runs/exp'
   # 模型保存间隔
@@ -43,4 +43,4 @@ training:
   # 每多少轮验证一次
   validate_interval: 5
   # 预训练模型
-  pretrain_path: 'None'
+  pretrain_path: null
