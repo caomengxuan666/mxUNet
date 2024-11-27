@@ -5,7 +5,7 @@ from efficientnet_pytorch import EfficientNet
 
 
 class PyramidPooling(nn.Module):
-    def __init__(self, in_channels, pool_sizes, dropout_prob=0.3):
+    def __init__(self, in_channels, pool_sizes, dropout_prob=0.5):
         super(PyramidPooling, self).__init__()
         reduced_channels = in_channels // 4
         self.stages = nn.ModuleList([
@@ -14,7 +14,7 @@ class PyramidPooling(nn.Module):
                 nn.Conv2d(in_channels, reduced_channels, kernel_size=1, bias=False),
                 nn.BatchNorm2d(reduced_channels),
                 nn.ReLU(inplace=True),
-                nn.Dropout(p=dropout_prob)
+                nn.Dropout(p=dropout_prob)  # Dropout added to each pooling stage
             )
             for output_size in pool_sizes
         ])
@@ -22,7 +22,7 @@ class PyramidPooling(nn.Module):
             nn.Conv2d(in_channels + len(pool_sizes) * reduced_channels, in_channels, kernel_size=1),
             nn.BatchNorm2d(in_channels),
             nn.ReLU(inplace=True),
-            nn.Dropout(p=dropout_prob)
+            nn.Dropout(p=dropout_prob)  # Dropout added to the final conv
         )
 
     def forward(self, x):
@@ -67,7 +67,7 @@ class SpatialAttention(nn.Module):
 
 
 class MultiScaleAttention(nn.Module):
-    def __init__(self, in_channels, reduction=16, dropout_prob=0.3):
+    def __init__(self, in_channels, reduction=16, dropout_prob=0.5):
         super(MultiScaleAttention, self).__init__()
         self.channel_att = ChannelAttention(in_channels, reduction)
         self.spatial_att = SpatialAttention()
@@ -79,6 +79,7 @@ class MultiScaleAttention(nn.Module):
         x = self.spatial_att(x)
         x = self.dropout(x)  # Dropout after spatial attention
         return x
+
 
 
 class Up(nn.Module):
@@ -97,7 +98,7 @@ class Up(nn.Module):
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True)
         )
-        self.dropout = nn.Dropout(p=0.3)
+        self.dropout = nn.Dropout(p=0.5)
 
     def forward(self, x1, x2):
         x1 = self.up(x1)
@@ -114,13 +115,13 @@ class OutConv(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(OutConv, self).__init__()
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
-        # 无需 Dropout
+
     def forward(self, x):
         return self.conv(x)
 
 
 class ResidualBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, dropout_prob=0.4):
+    def __init__(self, in_channels, out_channels, dropout_prob=0.5):
         super(ResidualBlock, self).__init__()
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(out_channels)
@@ -140,12 +141,12 @@ class ResidualBlock(nn.Module):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
-        #x = self.dropout(x)  # Dropout after the first block
+        x = self.dropout(x)  # Dropout after the first block
         x = self.conv2(x)
         x = self.bn2(x)
         x += self.shortcut(residual)
         x = self.relu(x)
-        #x = self.dropout(x)  # Dropout after adding the shortcut
+        x = self.dropout(x)  # Dropout after adding the shortcut
         return x
 
 
@@ -156,11 +157,8 @@ class EnhancedUNet(nn.Module):
         self.n_classes = n_classes
         self.bilinear = bilinear
 
-        # 硬编码使用 'efficientnet-b4'
-        efficientnet_version = 'efficientnet-b4'
-
-        # 加载 EfficientNet-b4 并修改第一层卷积（如果输入通道数 != 3）
-        self.encoder = EfficientNet.from_pretrained(efficientnet_version)
+        # Load EfficientNet and modify the first convolutional layer if necessary
+        self.encoder = EfficientNet.from_pretrained('efficientnet-b0')
 
         if self.n_channels != 3:
             self.encoder._conv_stem = nn.Conv2d(
@@ -172,162 +170,69 @@ class EnhancedUNet(nn.Module):
                 bias=False
             )
 
-        # 定义初始层（stem）
+        # Define the initial layers (stem)
         self.inc = nn.Sequential(
             self.encoder._conv_stem,
             self.encoder._bn0,
             self.encoder._swish
         )
 
-        # 定义下采样块，根据 EfficientNet-b4 的实际架构调整块的范围
-        # EfficientNet-b4 的阶段：
-        # 阶段1: Block 0-4 → output_filters=32
-        # 阶段2: Block 5-9 → output_filters=56
-        # 阶段3: Block 10-16 → output_filters=160
-        # 阶段4: Block 17-21 → output_filters=160
+        # Define the downsampling blocks by correctly indexing the blocks
+        self.down1 = nn.Sequential(*self.encoder._blocks[:2])    # blocks 0-1: output 24 channels
+        self.down2 = nn.Sequential(*self.encoder._blocks[2:4])    # blocks 2-3: output 40 channels
+        self.down3 = nn.Sequential(*self.encoder._blocks[4:6])    # blocks 4-5: output 80 channels
+        self.down4 = nn.Sequential(*self.encoder._blocks[6:16])   # blocks 6-15: output 320 channels
 
-        # 设置下采样块
-        self.down1 = nn.Sequential(*self.encoder._blocks[:5])    # Blocks 0-4: output_filters=32
-        self.down2 = nn.Sequential(*self.encoder._blocks[5:10])  # Blocks 5-9: output_filters=56
-        self.down3 = nn.Sequential(*self.encoder._blocks[10:17]) # Blocks 10-16: output_filters=160
-        self.down4 = nn.Sequential(*self.encoder._blocks[17:22])  # Blocks 17-21: output_filters=160
-
-        # 获取下采样块的输出通道数
-        down1_out_channels = self.down1[-1]._block_args.output_filters  # 32
-        down2_out_channels = self.down2[-1]._block_args.output_filters  # 56
-        down3_out_channels = self.down3[-1]._block_args.output_filters  # 160
-        down4_out_channels = self.down4[-1]._block_args.output_filters  # 160
-
-        # 打印以确认输出通道数
-        print(f"down1_out_channels: {down1_out_channels}")  # 32
-        print(f"down2_out_channels: {down2_out_channels}")  # 56
-        print(f"down3_out_channels: {down3_out_channels}")  # 160
-        print(f"down4_out_channels: {down4_out_channels}")  # 160
-
-        # Head（在块之后）
+        # Head (after the blocks)
         self.head = nn.Sequential(
-            nn.Conv2d(down4_out_channels, 1792, kernel_size=1, stride=1, bias=False),  # 160 → 1792
-            nn.BatchNorm2d(1792),
-            nn.SiLU()
+            self.encoder._conv_head,  # Conv2d to 1280 channels
+            self.encoder._bn1,
+            self.encoder._swish
         )
 
-        # Pyramid Pooling 和 Multi-Scale Attention
-        self.ppm_in_channels = 1792
-        self.ppm = PyramidPooling(self.ppm_in_channels, pool_sizes=[1, 2, 3, 6])
-        self.attention = MultiScaleAttention(self.ppm_in_channels)
+        # Pyramid Pooling and Multi-Scale Attention
+        self.ppm = PyramidPooling(1280, pool_sizes=[1, 2, 3, 6])  # 1280 channels
+        self.attention = MultiScaleAttention(1280)
 
-        # 解码器
-        self.up1 = Up(self.ppm_in_channels + down4_out_channels, 512, bilinear)   # 1792 +160=1952 →512
-        self.up2 = Up(512 + down2_out_channels, 256, bilinear)                    # 512 +56=568 →256
-        self.up3 = Up(256 + down1_out_channels, 128, bilinear)                    # 256 +32=288 →128
-        self.up4 = Up(128 + self.inc[0].out_channels, 64, bilinear)               # 128 +32=160 →64
+        # Decoder
+        # Define the decoder 'Up' modules with correct in_channels
+        self.up1 = Up(1280 + 80, 512, bilinear)   # x5=1280, x4=80 --> 1280+80=1360
+        self.up2 = Up(512 + 40, 256, bilinear)    # x3=40 --> 512+40=552
+        self.up3 = Up(256 + 24, 128, bilinear)    # x2=24 --> 256+24=280
+        self.up4 = Up(128 + 32, 64, bilinear)     # x1=32 --> 128+32=160
 
-        # 残差块
+        # Residual Blocks
         self.res_block1 = ResidualBlock(512, 512)
         self.res_block2 = ResidualBlock(256, 256)
         self.res_block3 = ResidualBlock(128, 128)
         self.res_block4 = ResidualBlock(64, 64)
 
-        # 输出层
+        # Output
         self.outc = OutConv(64, n_classes)
 
     def forward(self, x):
-        # 编码器
-        x1 = self.inc(x)
-        x2 = self.down1(x1)
-        x3 = self.down2(x2)
-        x4 = self.down3(x3)
-        x5 = self.down4(x4)
-        x5 = self.head(x5)
+        # Encoder
+        x1 = self.inc(x)       # After inc: 32 channels
+        x2 = self.down1(x1)    # After down1: 24 channels
+        x3 = self.down2(x2)    # After down2: 40 channels
+        x4 = self.down3(x3)    # After down3: 80 channels
+        x5 = self.down4(x4)    # After down4: 320 channels
+        x5 = self.head(x5)     # After head: 1280 channels
 
-        # Pyramid Pooling 和 Multi-Scale Attention
-        x5 = self.ppm(x5)
-        x5 = self.attention(x5)
+        # Pyramid Pooling and Multi-Scale Attention
+        x5 = self.ppm(x5)      # 1280 channels
+        x5 = self.attention(x5) # 1280 channels
 
-        # 解码器
-        x = self.up1(x5, x4)
-        x = self.res_block1(x)
-        x = self.up2(x, x3)
-        x = self.res_block2(x)
-        x = self.up3(x, x2)
-        x = self.res_block3(x)
-        x = self.up4(x, x1)
-        x = self.res_block4(x)
+        # Decoder
+        x = self.up1(x5, x4)   # up1: 1280 +80=1360 channels -> 512
+        x = self.res_block1(x) # 512 channels
+        x = self.up2(x, x3)    # up2: 512 +40=552 channels -> 256
+        x = self.res_block2(x) # 256 channels
+        x = self.up3(x, x2)    # up3: 256 +24=280 channels -> 128
+        x = self.res_block3(x) # 128 channels
+        x = self.up4(x, x1)    # up4: 128 +32=160 channels -> 64
+        x = self.res_block4(x) # 64 channels
 
-        logits = self.outc(x)
-        return logits
+        logits = self.outc(x)  # 1 channel
 
-class VGGNET(nn.Module):
-    def __init__(self, n_channels, n_classes, bilinear=True):
-        super(EnhancedUNet, self).__init__()
-        self.n_channels = n_channels
-        self.n_classes = n_classes
-        self.bilinear = bilinear
-
-        # 使用 VGG16 作为编码器
-        vgg = models.vgg16_bn(pretrained=True)  # 使用 VGG16，若不需要预训练权重可以设置为False
-        self.encoder = vgg.features  # 提取 VGG 的卷积部分
-
-        if self.n_channels != 3:
-            self.encoder[0] = nn.Conv2d(self.n_channels, 64, kernel_size=3, padding=1)
-
-        # 获取 VGG 的每个阶段输出通道数
-        self.down1_out_channels = 64
-        self.down2_out_channels = 128
-        self.down3_out_channels = 256
-        self.down4_out_channels = 512
-
-        # Head 部分
-        self.head = nn.Sequential(
-            nn.Conv2d(self.down4_out_channels, 1024, kernel_size=1, stride=1, bias=False),
-            nn.BatchNorm2d(1024),
-            nn.ReLU(inplace=True)
-        )
-
-        # Pyramid Pooling 和 Multi-Scale Attention
-        self.ppm_in_channels = 1024
-        self.ppm = PyramidPooling(self.ppm_in_channels, pool_sizes=[1, 2, 3, 6])
-        self.attention = MultiScaleAttention(self.ppm_in_channels)
-
-        # 解码器部分
-        self.up1 = Up(self.ppm_in_channels + self.down4_out_channels, 512, bilinear)
-        self.up2 = Up(512 + self.down3_out_channels, 256, bilinear)
-        self.up3 = Up(256 + self.down2_out_channels, 128, bilinear)
-        self.up4 = Up(128 + self.down1_out_channels, 64, bilinear)
-
-        # 残差块
-        self.res_block1 = ResidualBlock(512, 512)
-        self.res_block2 = ResidualBlock(256, 256)
-        self.res_block3 = ResidualBlock(128, 128)
-        self.res_block4 = ResidualBlock(64, 64)
-
-        # 输出层
-        self.outc = OutConv(64, n_classes)
-
-    def forward(self, x):
-        # 编码器部分（VGG）
-        x1 = self.encoder[0:4](x)
-        x2 = self.encoder[4:9](x1)
-        x3 = self.encoder[9:16](x2)
-        x4 = self.encoder[16:23](x3)
-        x5 = self.encoder[23:](x4)  # 最后的卷积层
-
-        # Head 部分
-        x5 = self.head(x5)
-
-        # Pyramid Pooling 和 Multi-Scale Attention
-        x5 = self.ppm(x5)
-        x5 = self.attention(x5)
-
-        # 解码器部分
-        x = self.up1(x5, x4)
-        x = self.res_block1(x)
-        x = self.up2(x, x3)
-        x = self.res_block2(x)
-        x = self.up3(x, x2)
-        x = self.res_block3(x)
-        x = self.up4(x, x1)
-        x = self.res_block4(x)
-
-        logits = self.outc(x)
         return logits

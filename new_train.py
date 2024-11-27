@@ -1,8 +1,6 @@
 import yaml
 from torch.utils.tensorboard import SummaryWriter
 from model.Enhanced_Unet import EnhancedUNet
-#from model.V2NET import EnhancedUNet
-
 from torch import optim
 import torch.nn as nn
 import torch
@@ -16,7 +14,7 @@ import random
 import torchvision.transforms.functional as TF
 import matplotlib.pyplot as plt
 import numpy as np
-from losses import BCEDiceLoss,FocalBCEDiceLoss,BCETverskyLoss,DiceLoss,WeightedDiceLoss
+
 
 # 加载配置文件
 def load_config(config_path):
@@ -117,6 +115,29 @@ class CustomDataset(Dataset):
             print(f"Error processing index {idx}: {e}")
             # 这里可以选择跳过有问题的数据或重新抛出异常
             raise e
+
+
+# 自定义损失函数：Binary Cross Entropy + Dice Loss
+class BCEDiceLoss(nn.Module):
+    def __init__(self, weight=None):
+        super(BCEDiceLoss, self).__init__()
+        self.weight = weight
+
+    def forward(self, inputs, targets):
+        # 计算 Binary Cross Entropy Loss
+        bce = nn.functional.binary_cross_entropy_with_logits(inputs, targets, weight=self.weight)
+
+        # 计算 Dice Loss
+        inputs = torch.sigmoid(inputs)
+        inputs = inputs.view(-1)
+        targets = targets.view(-1)
+
+        intersection = (inputs * targets).sum()
+        dice = (2. * intersection + 1e-7) / (inputs.sum() + targets.sum() + 1e-7)
+        dice_loss = 1 - dice
+
+        return bce + dice_loss
+
 
 # 计算多个指标
 def compute_metrics(pred, label):
@@ -248,7 +269,7 @@ def validate_net(net, val_loader, criterion, device, writer, epoch, config, save
         os.makedirs(target_dir, exist_ok=True)  # 确保目标目录存在
         for i in range(len(sample_images)):
             fig, axs = plt.subplots(1, 3, figsize=(12, 4))
-            # 转换为适合显示的格式
+            # 转换为适合显示的格式 
             if config['model']['channels'] == 1:
                 axs[0].imshow(sample_images[i].squeeze(), cmap='gray')
             else:
@@ -290,7 +311,7 @@ def train_net(net, device, train_loader, val_loader, args, config):
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=True)
     criterion = BCEDiceLoss()
     best_loss = float('inf')
-    patience = 25  # 允许验证损失不下降的最大epoch数
+    patience = 10  # 允许验证损失不下降的最大epoch数
     trigger_times = 0
 
     os.makedirs(args["save_path"], exist_ok=True)
@@ -423,5 +444,4 @@ def main(config_path='newconfig.yaml'):
 
 
 if __name__ == "__main__":
-
     main()
