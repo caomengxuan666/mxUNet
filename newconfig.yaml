@@ -1,12 +1,12 @@
 data:
   # 训练集路径
-  image_dir: '/home/chxy/mxUNet/dataset/train/images_excluding_loss'
+  image_dir: '/home/chxy/cardiacUDC_TR/four_images'
   # 掩膜标签路径
-  mask_dir: '/home/chxy/mxUNet/dataset/train/four_binary'
+  mask_dir: '/home/chxy/cardiacUDC_TR/four_binary'
   # 验证集路径
-  val_image_dir: '/home/chxy/mxUNet/dataset/cardiacUDC_TE/images'
+  val_image_dir: '/home/chxy/cardiacUDC_TE/four_images'
   # 验证集标签路径
-  val_mask_dir: '/home/chxy/mxUNet/dataset/cardiacUDC_TE/labels'
+  val_mask_dir: '/home/chxy/cardiacUDC_TE/four_binary'
 
   # 训练批次大小
   batch_size: 128
