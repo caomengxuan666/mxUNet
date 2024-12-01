@@ -120,7 +120,7 @@ class OutConv(nn.Module):
 
 
 class ResidualBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, dropout_prob=0.4):
+    def __init__(self, in_channels, out_channels, dropout_prob=0.3):
         super(ResidualBlock, self).__init__()
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(out_channels)
@@ -140,12 +140,12 @@ class ResidualBlock(nn.Module):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
-        #x = self.dropout(x)  # Dropout after the first block
+        x = self.dropout(x)  # Dropout after the first block
         x = self.conv2(x)
         x = self.bn2(x)
         x += self.shortcut(residual)
         x = self.relu(x)
-        #x = self.dropout(x)  # Dropout after adding the shortcut
+        x = self.dropout(x)  # Dropout after adding the shortcut
         return x
 
 
@@ -257,77 +257,3 @@ class EnhancedUNet(nn.Module):
         logits = self.outc(x)
         return logits
 
-class VGGNET(nn.Module):
-    def __init__(self, n_channels, n_classes, bilinear=True):
-        super(EnhancedUNet, self).__init__()
-        self.n_channels = n_channels
-        self.n_classes = n_classes
-        self.bilinear = bilinear
-
-        # 使用 VGG16 作为编码器
-        vgg = models.vgg16_bn(pretrained=True)  # 使用 VGG16，若不需要预训练权重可以设置为False
-        self.encoder = vgg.features  # 提取 VGG 的卷积部分
-
-        if self.n_channels != 3:
-            self.encoder[0] = nn.Conv2d(self.n_channels, 64, kernel_size=3, padding=1)
-
-        # 获取 VGG 的每个阶段输出通道数
-        self.down1_out_channels = 64
-        self.down2_out_channels = 128
-        self.down3_out_channels = 256
-        self.down4_out_channels = 512
-
-        # Head 部分
-        self.head = nn.Sequential(
-            nn.Conv2d(self.down4_out_channels, 1024, kernel_size=1, stride=1, bias=False),
-            nn.BatchNorm2d(1024),
-            nn.ReLU(inplace=True)
-        )
-
-        # Pyramid Pooling 和 Multi-Scale Attention
-        self.ppm_in_channels = 1024
-        self.ppm = PyramidPooling(self.ppm_in_channels, pool_sizes=[1, 2, 3, 6])
-        self.attention = MultiScaleAttention(self.ppm_in_channels)
-
-        # 解码器部分
-        self.up1 = Up(self.ppm_in_channels + self.down4_out_channels, 512, bilinear)
-        self.up2 = Up(512 + self.down3_out_channels, 256, bilinear)
-        self.up3 = Up(256 + self.down2_out_channels, 128, bilinear)
-        self.up4 = Up(128 + self.down1_out_channels, 64, bilinear)
-
-        # 残差块
-        self.res_block1 = ResidualBlock(512, 512)
-        self.res_block2 = ResidualBlock(256, 256)
-        self.res_block3 = ResidualBlock(128, 128)
-        self.res_block4 = ResidualBlock(64, 64)
-
-        # 输出层
-        self.outc = OutConv(64, n_classes)
-
-    def forward(self, x):
-        # 编码器部分（VGG）
-        x1 = self.encoder[0:4](x)
-        x2 = self.encoder[4:9](x1)
-        x3 = self.encoder[9:16](x2)
-        x4 = self.encoder[16:23](x3)
-        x5 = self.encoder[23:](x4)  # 最后的卷积层
-
-        # Head 部分
-        x5 = self.head(x5)
-
-        # Pyramid Pooling 和 Multi-Scale Attention
-        x5 = self.ppm(x5)
-        x5 = self.attention(x5)
-
-        # 解码器部分
-        x = self.up1(x5, x4)
-        x = self.res_block1(x)
-        x = self.up2(x, x3)
-        x = self.res_block2(x)
-        x = self.up3(x, x2)
-        x = self.res_block3(x)
-        x = self.up4(x, x1)
-        x = self.res_block4(x)
-
-        logits = self.outc(x)
-        return logits

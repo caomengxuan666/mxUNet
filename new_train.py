@@ -1,6 +1,6 @@
 import yaml
 from torch.utils.tensorboard import SummaryWriter
-from model.Enhanced_Unet import EnhancedUNet,VGGNET
+from model.Enhanced_Unet import EnhancedUNet
 from torch import optim
 import torch.nn as nn
 import torch
@@ -285,7 +285,7 @@ def validate_net(net, val_loader, criterion, device, writer, epoch, config, save
 # 训练函数
 def train_net(net, device, train_loader, val_loader, args, config):
     optimizer = optim.Adam(net.parameters(), lr=float(args["learning_rate"]), weight_decay=float(args["weight_decay"]))
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=True)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
     criterion = BCEDiceLoss()
     best_loss = float('inf')
     patience = 25  # 允许验证损失不下降的最大epoch数
@@ -341,7 +341,7 @@ def train_net(net, device, train_loader, val_loader, args, config):
                 net, val_loader, criterion, device, writer, epoch,
                 config=config,
                 save_samples=True,
-                save_path=args["save_path"]
+                save_path=args["save_pa th"]
             )
             scheduler.step(avg_val_loss)
 
@@ -357,7 +357,8 @@ def train_net(net, device, train_loader, val_loader, args, config):
                 if trigger_times >= patience:
                     print('Early stopping!')
                     break
-
+            current_lr = scheduler.get_last_lr()[0]
+            print(f"Current learning rate: {current_lr}")
         # 保存检查点
         if (epoch + 1) % args["save_interval"] == 0:
             checkpoint_path = os.path.join(args["save_path"], f'{args["save_name"]}_epoch_{epoch + 1}.pth')

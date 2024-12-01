@@ -113,3 +113,45 @@ class WeightedDiceLoss(nn.Module):
             loss = (loss * weight).mean()
 
         return loss
+
+class EdgeLoss(nn.Module):
+    def __init__(self, weight=1.0):
+        super(EdgeLoss, self).__init__()
+        self.weight = weight
+
+    def forward(self, inputs, targets):
+        # 假设输入是sigmoid输出, 应用Sobel算子进行边缘检测
+        inputs = torch.sigmoid(inputs)
+        targets = targets.float()
+
+        # 边缘提取（使用Sobel算子）
+        sobel_filter = torch.tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]).float().unsqueeze(0).unsqueeze(0).cuda()
+        sobel_filter = sobel_filter / 8.0
+
+        # 边缘检测（卷积）
+        input_edges = F.conv2d(inputs, sobel_filter, padding=1)
+        target_edges = F.conv2d(targets, sobel_filter, padding=1)
+
+        # 计算L1损失或L2损失
+        edge_loss = F.mse_loss(input_edges, target_edges)
+        return self.weight * edge_loss
+
+class OptimizedEdgeLoss(nn.Module):
+    def __init__(self, alpha=0.5, gamma=2, focal_alpha=0.25, dice_weight=0.5, edge_weight=1.0):
+        super(OptimizedEdgeLoss, self).__init__()
+        self.bce_dice_loss = BCEDiceLoss()
+        self.focal_dice_loss = FocalBCEDiceLoss(gamma=gamma, alpha=focal_alpha)
+        self.edge_loss = EdgeLoss(weight=edge_weight)
+        self.alpha = alpha  # 控制BCEDiceLoss和FocalBCEDiceLoss的权重
+        self.dice_weight = dice_weight
+
+    def forward(self, inputs, targets):
+        # 计算BCE + Dice Loss
+        bce_dice_loss = self.bce_dice_loss(inputs, targets)
+        focal_dice_loss = self.focal_dice_loss(inputs, targets)
+
+        # 计算边缘损失
+        edge_loss = self.edge_loss(inputs, targets)
+
+        # 返回加权的损失值
+        return self.dice_weight * bce_dice_loss + (1 - self.dice_weight) * focal_dice_loss + edge_loss
