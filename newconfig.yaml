@@ -16,6 +16,10 @@ data:
   image_ext: '.png'
   # 数据集的掩膜格式
   mask_ext: '.png'
+  # mean
+  mean: [0.1314, 0.1314, 0.1314]
+  # std
+  std: [0.1905, 0.1905, 0.1905]
 
 model:
   # 输入通道数
@@ -29,18 +33,19 @@ training:
   # 学习率
   learning_rate: 1e-4
   # 权重衰减
-  weight_decay: 1e-8
+  weight_decay: 1e-7
   # 动量
   momentum: 0.9
   # 保存模型路径
   save_path: 'outputModels'
   # 保存模型名称（动态加入轮次）
-  save_name: 'b4_BCED1130'
+  save_name: 'b4_LITE_BETTER_BCEIOUDiceLoss1207withHigherDecay_WITH_MEAN_STD'
   # 日志保存路径
   log_dir: 'runs/exp'
   # 模型保存间隔
   save_interval: 100
   # 每多少轮验证一次
-  validate_interval: 5
+  validate_interval: 1
   # 预训练模型
   pretrain_path: null
+

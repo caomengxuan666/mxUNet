@@ -3,7 +3,8 @@
 
 import torch.nn.functional as F
 
-from .unet_parts import *
+from unet_parts import *
+from torchsummary import summary
 
 
 class UNet(nn.Module):
@@ -38,5 +39,14 @@ class UNet(nn.Module):
         return logits
 
 if __name__ == '__main__':
-    net = UNet(n_channels=3, n_classes=1)
-    print(net)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # 创建模型实例并将其移动到设备
+    model = UNet(n_channels=3, n_classes=1).to(device)
+
+    # 创建输入数据并将其移动到设备
+    x = torch.randn(1, 3, 256, 256).to(device)
+
+    # 打印模型摘要
+    summary(model, (3, 256, 256))

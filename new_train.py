@@ -1,6 +1,7 @@
 import yaml
 from torch.utils.tensorboard import SummaryWriter
 from model.Enhanced_Unet import EnhancedUNet
+from model.Enhanced_Lite import EnhancedUNetOptimized
 from torch import optim
 import torch.nn as nn
 import torch
@@ -14,7 +15,8 @@ import random
 import torchvision.transforms.functional as TF
 import matplotlib.pyplot as plt
 import numpy as np
-from losses import BCEDiceLoss,FocalBCEDiceLoss,BCETverskyLoss,DiceLoss,WeightedDiceLoss
+from losses import *
+
 
 # 加载配置文件
 def load_config(config_path):
@@ -35,6 +37,8 @@ class CustomDataset(Dataset):
         self.image_ext = self.config['data']['image_ext']
         self.mask_ext = self.config['data']['mask_ext']
         self.channels = self.config['model']['channels']
+        self.mean = self.config['data']['mean']
+        self.std = self.config['data']['std']
         self.images = [f for f in os.listdir(image_dir) if f.endswith(self.image_ext)]
 
         if len(self.images) == 0:
@@ -109,6 +113,8 @@ class CustomDataset(Dataset):
             # 确保图像和掩膜的空间尺寸一致（忽略通道数）
             assert image.shape[1:] == mask.shape[1:], f"Image and mask spatial shapes do not match: {image.shape[1:]} vs {mask.shape[1:]}"
 
+            image = transforms.Normalize(mean=self.mean, std=self.std)(image)
+            # 归一化操作：仅对图像应用归一化，掩膜无需归一化
             return image, mask
 
         except Exception as e:
@@ -116,12 +122,14 @@ class CustomDataset(Dataset):
             # 这里可以选择跳过有问题的数据或重新抛出异常
             raise e
 
-# 计算多个指标
-def compute_metrics(pred, label):
-    pred = torch.sigmoid(pred) > 0.5  # 二值化
-    pred = pred.view(-1).float()
-    label = label.view(-1).float()
 
+def compute_metrics(pred, label):
+    # 如果输出是概率值，可以直接进行阈值化
+    pred = pred > 0.5  # 二值化（假设输出是已经经过sigmoid激活的概率）
+    pred = pred.view(-1).float()  # 展平
+    label = label.view(-1).float()  # 展平
+
+    # 计算各项指标
     intersection = (pred * label).sum()
     union = pred.sum() + label.sum() - intersection
     TP = intersection
@@ -129,6 +137,7 @@ def compute_metrics(pred, label):
     FN = label.sum() - intersection
     TN = (1 - pred).sum() - FN
 
+    # 各项指标计算
     dice = (2. * TP) / (2. * TP + FP + FN + 1e-7)
     iou = TP / (union + 1e-7)
     precision = TP / (TP + FP + 1e-7)
@@ -158,7 +167,6 @@ def get_train_transform(image_size):
     ])
 
 
-# 数据增强（验证集）仅进行必要的变换
 def get_val_transform(image_size):
     return transforms.Compose([
         transforms.Resize(image_size),
@@ -169,6 +177,9 @@ def get_val_transform(image_size):
 # 数据加载器准备函数
 def prepare_dataloader(config, is_train=True):
     image_size = config['data']['image_size']
+    mean = config['data']['mean']
+    std = config['data']['std']
+
     # 确保 image_size 是一个元组
     if isinstance(image_size, list):
         image_size = tuple(image_size)
@@ -192,8 +203,9 @@ def prepare_dataloader(config, is_train=True):
         image_dir=image_dir,
         mask_dir=mask_dir,
         image_transform=image_transform,
-        mask_transform=mask_transform
+        mask_transform=mask_transform,
     )
+
     return DataLoader(
         dataset,
         batch_size=config['data']['batch_size'],
@@ -263,7 +275,7 @@ def validate_net(net, val_loader, criterion, device, writer, epoch, config, save
             axs[2].set_title('Prediction')
             axs[2].axis('off')
             plt.tight_layout()
-            plt.savefig(os.path.join(target_dir, f'validation_sample_epoch_{epoch + 1}_{i+1}.png'))
+            plt.savefig(os.path.join(target_dir, f'validation_sample_epoch_{epoch + 1}_{i + 1}.png'))
             plt.close()
 
     # 计算平均损失和指标
@@ -286,9 +298,9 @@ def validate_net(net, val_loader, criterion, device, writer, epoch, config, save
 def train_net(net, device, train_loader, val_loader, args, config):
     optimizer = optim.Adam(net.parameters(), lr=float(args["learning_rate"]), weight_decay=float(args["weight_decay"]))
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
-    criterion = BCEDiceLoss()
+    criterion = BetterBCEDiceIoULoss()
     best_loss = float('inf')
-    patience = 25  # 允许验证损失不下降的最大epoch数
+    patience = 30  # 允许验证损失不下降的最大epoch数
     trigger_times = 0
 
     os.makedirs(args["save_path"], exist_ok=True)
@@ -341,7 +353,7 @@ def train_net(net, device, train_loader, val_loader, args, config):
                 net, val_loader, criterion, device, writer, epoch,
                 config=config,
                 save_samples=True,
-                save_path=args["save_pa th"]
+                save_path=args["save_path"]
             )
             scheduler.step(avg_val_loss)
 
@@ -381,7 +393,7 @@ def main(config_path='newconfig.yaml'):
         print(f"{key}: {value}")
 
     # 初始化模型
-    net = EnhancedUNet(n_channels=config['model']['channels'], n_classes=config['model']['n_classes'])
+    net = EnhancedUNetOptimized(n_channels=config['model']['channels'], n_classes=config['model']['n_classes'])
     net.to(device=device)
 
     # 准备数据加载器
@@ -422,5 +434,4 @@ def main(config_path='newconfig.yaml'):
 
 
 if __name__ == "__main__":
-
     main()

@@ -2,7 +2,64 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from efficientnet_pytorch import EfficientNet
+from torchsummary import summary
 
+class FPNBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(FPNBlock, self).__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
+        self.bn = nn.BatchNorm2d(out_channels)
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        return self.relu(self.bn(self.conv(x)))
+
+
+class FPN(nn.Module):
+    def __init__(self, in_channels_list, out_channels):
+        super(FPN, self).__init__()
+        self.in_channels_list = in_channels_list
+        self.out_channels = out_channels
+
+        # lateral_convs 用于将每个特征图的通道数调整为 out_channels
+        self.lateral_convs = nn.ModuleList([
+            nn.Conv2d(in_channels, out_channels, kernel_size=1)
+            for in_channels in in_channels_list
+        ])
+        self.upsample = nn.ModuleList([
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+            for _ in in_channels_list
+        ])
+
+        # 新增卷积层以确保输出通道数一致
+        self.final_conv = nn.ModuleList([
+            nn.Conv2d(out_channels, out_channels, kernel_size=1)  # 将输出通道数限制为256
+            for _ in in_channels_list
+        ])
+
+    def forward(self, features):
+        lateral_features = []
+
+        # lateral_convs: 将每个输入特征图通过 lateral_convs 进行处理
+        for i, (lateral_conv, f) in enumerate(zip(self.lateral_convs, features)):
+            lateral_f = lateral_conv(f)
+            lateral_features.append(lateral_f)
+            print(f"Feature {i} after lateral conv: {lateral_f.shape}")
+
+        # 将低层特征图通过上采样合并
+        for i in range(len(lateral_features)-1, 0, -1):
+            print(f"Before upsampling - lateral_features[{i}]: {lateral_features[i].shape}")
+            print(f"Before upsampling - lateral_features[{i-1}]: {lateral_features[i-1].shape}")
+
+            # 这里你可以用F.interpolate来手动调整大小
+            lateral_features[i-1] += F.interpolate(lateral_features[i], size=lateral_features[i-1].shape[2:], mode='bilinear', align_corners=True)
+
+            print(f"After upsampling and adding - lateral_features[{i-1}]: {lateral_features[i-1].shape}")
+
+        # 最终输出通道数为 256
+        lateral_features = [self.final_conv[i](lateral_features[i]) for i in range(len(lateral_features))]
+
+        return lateral_features
 
 class PyramidPooling(nn.Module):
     def __init__(self, in_channels, pool_sizes, dropout_prob=0.3):
@@ -257,3 +314,14 @@ class EnhancedUNet(nn.Module):
         logits = self.outc(x)
         return logits
 
+if __name__ == "__main__":
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # 创建模型实例并将其移动到设备
+    model = EnhancedUNet(n_channels=3, n_classes=1).to(device)
+
+    # 创建输入数据并将其移动到设备
+    x = torch.randn(1, 3, 256, 256).to(device)
+
+    # 打印模型摘要
+    summary(model, (3, 256, 256))
