@@ -298,7 +298,7 @@ def validate_net(net, val_loader, criterion, device, writer, epoch, config, save
 def train_net(net, device, train_loader, val_loader, args, config):
     optimizer = optim.Adam(net.parameters(), lr=float(args["learning_rate"]), weight_decay=float(args["weight_decay"]))
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
-    criterion = BetterBCEDiceIoULoss()
+    criterion = BetterBCEDiceLoss()
     best_loss = float('inf')
     patience = 30  # 允许验证损失不下降的最大epoch数
     trigger_times = 0

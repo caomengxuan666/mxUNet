@@ -39,7 +39,7 @@ training:
   # 保存模型路径
   save_path: 'outputModels'
   # 保存模型名称（动态加入轮次）
-  save_name: 'b4_LITE_BETTER_BCEIOUDiceLoss1207withHigherDecay_WITH_MEAN_STD'
+  save_name: 'b4_LITE_BETTER_BCEDiceLoss1207withHigherDecay_WITH_MEAN_STD'
   # 日志保存路径
   log_dir: 'runs/exp'
   # 模型保存间隔
